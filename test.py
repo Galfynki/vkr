@@ -5,6 +5,9 @@ from tkinter import messagebox
 from tkinter import *
 import pandas as pd
 import numpy as np
+import requests
+import json
+import sqlite3
 from functools import partial
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
@@ -18,6 +21,7 @@ from sklearn.ensemble import BaggingRegressor
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
+
 
 
 
@@ -128,61 +132,127 @@ def main():
 if main == "main":
     main()
 
-# Функция для регистрации пользователя
-def register():
-    username = entry_username.get()
-    password = entry_password.get()
+
+
+# Создание базы данных и таблицы, если она не существует
+def create_database():
+    conn = sqlite3.connect('clients.db')
+    cursor = conn.cursor()
     
-    if username and password:
-        with open("users.txt", "a") as f:
-            f.write(f"{username},{password}\n")
-        messagebox.showinfo("Успех", "Регистрация успешна!")
-        entry_username.delete(0, tk.END)
-        entry_password.delete(0, tk.END)
-    else:
-        messagebox.showwarning("Ошибка", "Пожалуйста, заполните все поля.")
+    # Создание таблицы clients
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL
+        )
+    ''')
+    
+    # Пример добавления клиента (можно удалить, если не нужно)
+    cursor.execute("INSERT INTO clients (name, email) VALUES (?, ?)", ("Иван Иванов", "ivan@example.com"))
+    
+    conn.commit()
+    conn.close()
+
+# Словарь для хранения пользователей и их уровней доступа
+users = {
+    "client": {"password": "clientpass", "role": "client"},
+    "admin": {"password": "adminpass", "role": "admin"},
+}
 
 # Функция для входа пользователя
-def login():
+def login_user():
     username = entry_username.get()
     password = entry_password.get()
     
-    if username and password:
-        with open("users.txt", "r") as f:
-            users = f.readlines()
-        
-        for user in users:
-            stored_username, stored_password = user.strip().split(",")
-            if stored_username == username and stored_password == password:
-                messagebox.showinfo("Успех", "Вход успешен!")
-                show_main_interface()
-                return
-        messagebox.showwarning("Ошибка", "Неверный логин или пароль.")
+    if username in users and users[username]["password"] == password:
+        messagebox.showinfo("Успех", f"Вход успешен! Добро пожаловать, {username}.")
+        show_account_screen(users[username]["role"])
     else:
-        messagebox.showwarning("Ошибка", "Пожалуйста, заполните все поля.")
+        messagebox.showwarning("Ошибка", "Неверный логин или пароль.")
 
-   # Функция для отображения основного интерфейса после входа
-def show_main_interface():
-    # Удаляем все элементы из текущего окна
+# Функция для отображения личного кабинета в зависимости от уровня доступа
+def show_account_screen(role):
     for widget in root.winfo_children():
         widget.destroy()
 
-    # Создаем новый интерфейс
-    label_welcome = tk.Label(root, text="Добро пожаловать!", font=("Arial", 16))
+    label_welcome = tk.Label(root, text=f"Добро пожаловать в личный кабинет, {role}!", font=("Arial", 16))
     label_welcome.pack(pady=20)
 
-    button_action1 = tk.Button(root, text="Действие 1", command=lambda: messagebox.showinfo("Действие", "Вы выбрали действие 1"))
-    button_action1.pack(pady=10)
+    if role == "client":
+        client_data = get_client_data(1)  # Получаем данные клиента с ID 1
+        label_name = tk.Label(root, text=f"Имя: {client_data[1]}")
+        label_name.pack(pady=5)
+        label_email = tk.Label(root, text=f"Email: {client_data[2]}")
+        label_email.pack(pady=5)
 
-    button_action2 = tk.Button(root, text="Действие 2", command=lambda: messagebox.showinfo("Действие", "Вы выбрали действие 2"))
-    button_action2.pack(pady=10)
+        button_update_data = tk.Button(root, text="Изменить свои данные", command=show_update_form)
+        button_update_data.pack(pady=10)
 
     button_logout = tk.Button(root, text="Выход", command=root.quit)
     button_logout.pack(pady=10)
 
+# Функция для получения данных клиента из базы данных
+def get_client_data(client_id):
+    conn = sqlite3.connect('clients.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM clients WHERE id = ?", (client_id,))
+    client_data = cursor.fetchone()
+    conn.close()
+    return client_data
+
+# Функция для отображения формы изменения данных клиента
+def show_update_form():
+    for widget in root.winfo_children():
+        widget.destroy()
+
+    client_data = get_client_data(1)  # Получаем данные клиента с ID 1
+
+    label_id = tk.Label(root, text="ID клиента:")
+    label_id.pack()
+    entry_id = tk.Entry(root)
+    entry_id.insert(0, client_data[0])  # Вставляем ID клиента
+    entry_id.config(state='readonly')  # Делаем поле только для чтения
+    entry_id.pack()
+
+    label_name = tk.Label(root, text="Новое имя:")
+    label_name.pack()
+    entry_name = tk.Entry(root)
+    entry_name.insert(0, client_data[1])  # Вставляем текущее имя
+    entry_name.pack()
+
+    label_email = tk.Label(root, text="Новый email:")
+    label_email.pack()
+    entry_email = tk.Entry(root)
+    entry_email.insert(0, client_data[2])  # Вставляем текущий email
+    entry_email.pack()
+
+    button_update = tk.Button(root, text="Обновить данные", command=lambda: update_client_data(entry_id.get(), entry_name.get(), entry_email.get()))
+    button_update.pack()
+
+    button_back = tk.Button(root, text="Назад", command=lambda: show_account_screen(users[entry_username.get()]["role"]))
+    button_back.pack()
+
+
+# Функция для обновления данных клиента
+def update_client_data(client_id, new_name, new_email):
+    conn = sqlite3.connect('clients.db')
+    cursor = conn.cursor()
+
+    cursor.execute("UPDATE clients SET name = ?, email = ? WHERE id = ?", (new_name, new_email, client_id))
+    conn.commit()
+    conn.close()
+
+    messagebox.showinfo("Успех", "Данные клиента обновлены!")
+    show_account_screen(users[entry_username.get()]["role"])  # Обновляем экран после изменения данных
+
 # Создание основного окна
 root = tk.Tk()
 root.title("Регистрация и Вход")
+root.geometry('400x300')
+
+# Создание базы данных
+create_database()
 
 # Метки и поля ввода
 label_username = tk.Label(root, text="Логин:")
@@ -195,15 +265,12 @@ label_password.pack(pady=5)
 entry_password = tk.Entry(root, show="*")
 entry_password.pack(pady=5)
 
-# Кнопки для регистрации и входа
-button_register = tk.Button(root, text="Регистрация", command=register)
-button_register.pack(pady=10)
-
-button_login = tk.Button(root, text="Вход", command=login)
+# Кнопки для входа
+button_login = tk.Button(root, text="Вход", command=login_user)
 button_login.pack(pady=10)
 
 # Запуск главного цикла
 root.mainloop()
 
 if __name__ == "__main__":
-    create_window()
+    main()
