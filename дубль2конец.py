@@ -992,6 +992,7 @@ class VideoAnalyzerApp:
         logout_btn.pack(side=tk.RIGHT, padx=5)
         
         # Вкладка анализа дорожного движения
+        
         analysis_tab = ttk.Frame(tab_control)
         tab_control.add(analysis_tab, text="Анализ дорожного движения")
         self.setup_analysis_tab(analysis_tab)
